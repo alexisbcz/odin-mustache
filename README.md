@@ -104,7 +104,7 @@ To keep or extend JSON data as a `Value`, copy it with `from_json` and free the 
 
 ## Partials and errors
 
-A `Partials` value holds compiled templates that `{{> name}}` tags include. When a partial tag stands alone on its line, every line of the partial gets the tag's indentation. `compile_with_location` says where a malformed template goes wrong.
+A `Partials` value holds compiled templates that `{{> name}}` tags include. A zero `Partials` works too and uses `context.allocator`; call `partials_init` to choose another allocator. When a partial tag stands alone on its line, every line of the partial gets the tag's indentation. `compile_with_location` says where a malformed template goes wrong.
 
 ```odin
 package main
@@ -191,6 +191,7 @@ odin run examples/json
 
 - Every allocating procedure takes `allocator := context.allocator` and says who owns the result.
 - Fallible procedures return `(T, Error)`. Malformed templates come back as a `Parse_Error`, and partials that include each other without end come back as `Render_Error.Partial_Depth_Exceeded` after `MAX_PARTIAL_DEPTH` levels.
+- Rendering calls itself once per nested section or partial, so `MAX_NESTING_DEPTH` (256) bounds the depth and keeps the stack safe. A template with deeper sections fails to compile with `Parse_Error.Too_Deeply_Nested`. Recursive partials that nest sections past the limit stop with `Render_Error.Nesting_Depth_Exceeded`.
 - `compile` handles delimiters, comments and standalone lines up front, so rendering walks the tree without scanning text again.
 - A missing partial renders as empty text, as the specification requires.
 - Lambdas and template inheritance are optional parts of the specification and aren't supported. Parent and block tags fail to compile with `Parse_Error.Unsupported_Tag`.
