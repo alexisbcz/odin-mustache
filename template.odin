@@ -322,6 +322,10 @@ parse :: proc(p: ^Parser) -> (nodes: []Node, error_offset: int, err: Error) {
 			}
 
 		case .Section, .Inverted:
+			// Frame 0 holds the top level, so len(p.frames) is the depth of the new section.
+			if len(p.frames) > MAX_NESTING_DEPTH {
+				return nil, tag_start, .Too_Deeply_Nested
+			}
 			name := parse_name(content, p.allocator) or_return
 			frame := Frame {
 				name            = name,

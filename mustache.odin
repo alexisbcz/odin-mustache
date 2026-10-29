@@ -61,6 +61,8 @@ Parse_Error :: enum {
 	Mismatched_Close,
 	// The tag uses an optional spec module that this package doesn't implement.
 	Unsupported_Tag,
+	// Sections are nested more than MAX_NESTING_DEPTH levels deep.
+	Too_Deeply_Nested,
 }
 
 // Render_Error lists the ways rendering a valid template can fail.
@@ -68,6 +70,8 @@ Render_Error :: enum {
 	None,
 	// Partials nested deeper than MAX_PARTIAL_DEPTH, usually through unbounded recursion.
 	Partial_Depth_Exceeded,
+	// Sections and partials together nested deeper than MAX_NESTING_DEPTH.
+	Nesting_Depth_Exceeded,
 }
 
 /*
@@ -97,6 +101,15 @@ Location :: struct {
 
 // MAX_PARTIAL_DEPTH bounds how deeply partials may include other partials.
 MAX_PARTIAL_DEPTH :: 128
+
+/*
+MAX_NESTING_DEPTH bounds how deeply sections may nest in one template, and how
+deeply sections and partials together may nest while rendering. Rendering
+recurses once per level, so the bound keeps a hostile or broken template from
+overflowing the stack. compile reports `.Too_Deeply_Nested` and render reports
+`.Nesting_Depth_Exceeded`.
+*/
+MAX_NESTING_DEPTH :: 256
 
 /*
 Value is the dynamic data type that templates read from.
@@ -152,7 +165,7 @@ Inputs:
 
 Returns:
 - output: the rendered text, owned by the caller; free it with `delete(output, allocator)`.
-- err: `.Partial_Depth_Exceeded`, an io.Error or an allocator error. On error, output is empty.
+- err: a Render_Error, an io.Error or an allocator error. On error, output is empty.
 */
 render :: proc(tmpl: Template, data: Value, partials: ^Partials = nil, allocator := context.allocator) -> (output: string, err: Error) {
 	return render_ref(tmpl, data, partials, allocator)
@@ -170,7 +183,7 @@ Inputs:
 
 Returns:
 - output: the rendered text, owned by the caller; free it with `delete(output, allocator)`.
-- err: `.Partial_Depth_Exceeded`, an io.Error or an allocator error. On error, output is empty.
+- err: a Render_Error, an io.Error or an allocator error. On error, output is empty.
 */
 render_json :: proc(tmpl: Template, data: json.Value, partials: ^Partials = nil, allocator := context.allocator) -> (output: string, err: Error) {
 	return render_ref(tmpl, data, partials, allocator)
@@ -188,7 +201,7 @@ Inputs:
 - allocator: allocates scratch memory, which it frees before returning.
 
 Returns:
-- err: `.Partial_Depth_Exceeded`, an error from `w`, or an allocator error.
+- err: a Render_Error, an error from `w`, or an allocator error.
 */
 render_to_writer :: proc(w: io.Writer, tmpl: Template, data: Value, partials: ^Partials = nil, allocator := context.allocator) -> Error {
 	return render_ref_to_writer(w, tmpl, data, partials, allocator)
@@ -207,7 +220,7 @@ Inputs:
 - allocator: allocates scratch memory, which it frees before returning.
 
 Returns:
-- err: `.Partial_Depth_Exceeded`, an error from `w`, or an allocator error.
+- err: a Render_Error, an error from `w`, or an allocator error.
 */
 render_json_to_writer :: proc(w: io.Writer, tmpl: Template, data: json.Value, partials: ^Partials = nil, allocator := context.allocator) -> Error {
 	return render_ref_to_writer(w, tmpl, data, partials, allocator)

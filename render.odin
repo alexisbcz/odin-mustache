@@ -32,7 +32,10 @@ Renderer :: struct {
 	*/
 	pending:       bool,
 	pending_from:  int,
+	// Partials being rendered, bounded by MAX_PARTIAL_DEPTH.
 	depth:         int,
+	// Sections and partials being rendered, bounded by MAX_NESTING_DEPTH.
+	nesting:       int,
 }
 
 @(private)
@@ -53,8 +56,8 @@ render_ref_to_writer :: proc(w: io.Writer, tmpl: Template, data: Ref, partials: 
 
 @(private)
 render_nodes :: proc(r: ^Renderer, nodes: []Node) -> Error {
-	for node in nodes {
-		switch n in node {
+	for &node in nodes {
+		switch &n in node {
 		case Text:
 			write_text(r, n.text) or_return
 		case Variable:
@@ -63,16 +66,30 @@ render_nodes :: proc(r: ^Renderer, nodes: []Node) -> Error {
 				write_value(r, v, n.escape) or_return
 			}
 		case Section:
-			render_section(r, n) or_return
+			render_section(r, &n) or_return
 		case Partial:
-			render_partial(r, n) or_return
+			render_partial(r, &n) or_return
 		}
 	}
 	return nil
 }
 
+/*
+enter counts one more level of section or partial nesting. Rendering recurses
+once per level, so the limit keeps the stack bounded even when recursive
+partials each nest a few sections.
+*/
 @(private)
-render_section :: proc(r: ^Renderer, s: Section) -> Error {
+enter :: #force_inline proc(r: ^Renderer) -> Error {
+	if r.nesting >= MAX_NESTING_DEPTH {
+		return .Nesting_Depth_Exceeded
+	}
+	r.nesting += 1
+	return nil
+}
+
+@(private)
+render_section :: proc(r: ^Renderer, s: ^Section) -> Error {
 	// A standalone tag's line is gone from the output, so it owes no indentation.
 	if !s.standalone_open {
 		flush_indent(r) or_return
@@ -80,6 +97,8 @@ render_section :: proc(r: ^Renderer, s: Section) -> Error {
 
 	v, found := lookup(r, s.name)
 	truthy := found && is_truthy(v)
+	enter(r) or_return
+	defer r.nesting -= 1
 	switch {
 	case s.inverted:
 		if !truthy {
@@ -101,7 +120,7 @@ render_section :: proc(r: ^Renderer, s: Section) -> Error {
 }
 
 @(private)
-render_partial :: proc(r: ^Renderer, p: Partial) -> Error {
+render_partial :: proc(r: ^Renderer, p: ^Partial) -> Error {
 	if !p.standalone {
 		flush_indent(r) or_return
 	}
@@ -128,6 +147,8 @@ render_partial :: proc(r: ^Renderer, p: Partial) -> Error {
 	if r.depth >= MAX_PARTIAL_DEPTH {
 		return .Partial_Depth_Exceeded
 	}
+	enter(r) or_return
+	defer r.nesting -= 1
 
 	if p.standalone {
 		if !r.pending {

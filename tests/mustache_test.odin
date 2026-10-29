@@ -191,6 +191,38 @@ test_compile_rejects_bad_delimiters :: proc(t: ^testing.T) {
 	expect_compile_error(t, "{{=a= b=}}", .Invalid_Delimiters)
 }
 
+// nested_sections returns `depth` nested `{{#a}}` sections around "x".
+nested_sections :: proc(depth: int) -> string {
+	b := strings.builder_make()
+	for _ in 0 ..< depth {
+		strings.write_string(&b, "{{#a}}")
+	}
+	strings.write_byte(&b, 'x')
+	for _ in 0 ..< depth {
+		strings.write_string(&b, "{{/a}}")
+	}
+	return strings.to_string(b)
+}
+
+@(test)
+test_compile_limits_section_nesting :: proc(t: ^testing.T) {
+	context.allocator = track_leaks(t).allocator
+	deepest := nested_sections(mustache.MAX_NESTING_DEPTH)
+	defer delete(deepest)
+	expect_render(t, deepest, mustache.Object{{"a", true}}, "x")
+
+	too_deep := nested_sections(mustache.MAX_NESTING_DEPTH + 1)
+	defer delete(too_deep)
+	expect_compile_error(t, too_deep, .Too_Deeply_Nested)
+	_, loc, _ := mustache.compile_with_location(too_deep)
+	testing.expect_value(t, loc.offset, mustache.MAX_NESTING_DEPTH * len("{{#a}}"))
+
+	// Before the limit, rendering this many levels overflowed the stack.
+	hostile := nested_sections(100_000)
+	defer delete(hostile)
+	expect_compile_error(t, hostile, .Too_Deeply_Nested)
+}
+
 @(test)
 test_compile_rejects_inheritance_tags :: proc(t: ^testing.T) {
 	context.allocator = track_leaks(t).allocator
@@ -635,6 +667,24 @@ test_partials_runaway_recursion_is_an_error :: proc(t: ^testing.T) {
 	defer mustache.template_destroy(&tmpl)
 	out, rerr := mustache.render(tmpl, nil, &partials)
 	testing.expect_value(t, rerr, mustache.Error(mustache.Render_Error.Partial_Depth_Exceeded))
+	testing.expect_value(t, out, "")
+}
+
+@(test)
+test_partials_nesting_with_sections_is_bounded :: proc(t: ^testing.T) {
+	context.allocator = track_leaks(t).allocator
+	partials: mustache.Partials
+	mustache.partials_init(&partials)
+	defer mustache.partials_destroy(&partials)
+	// Each level nests three sections and a partial, so the total nesting
+	// reaches MAX_NESTING_DEPTH long before the partial depth limit.
+	testing.expect_value(t, mustache.partials_add(&partials, "p", "{{#a}}{{#a}}{{#a}}{{>p}}{{/a}}{{/a}}{{/a}}"), nil)
+
+	tmpl, err := mustache.compile("{{>p}}")
+	testing.expect_value(t, err, nil)
+	defer mustache.template_destroy(&tmpl)
+	out, rerr := mustache.render(tmpl, mustache.Object{{"a", true}}, &partials)
+	testing.expect_value(t, rerr, mustache.Error(mustache.Render_Error.Nesting_Depth_Exceeded))
 	testing.expect_value(t, out, "")
 }
 
