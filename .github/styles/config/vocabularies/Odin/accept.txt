@@ -78,3 +78,5 @@ WebAssembly
 WebSocket(s)?
 Xcode
 XCTest
+[Uu]nescaped
+[Uu]ntyped

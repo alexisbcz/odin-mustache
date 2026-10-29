@@ -22,6 +22,15 @@ All three must pass with zero errors.
 - Write a doc comment for every exported declaration.
 - Add a test under `tests/` for every bug fix and every new procedure.
 
+## Specification tests
+
+`tools/gen_spec.py` generates `tests/spec_test.odin` from the official [Mustache specification](https://github.com/mustache/spec) suites. Don't edit it by hand. To update it, clone the specification at the tag you want and run the generator:
+
+```sh
+git clone --depth 1 --branch v1.4.3 https://github.com/mustache/spec /tmp/mustache-spec
+python3 tools/gen_spec.py /tmp/mustache-spec/specs tests/spec_test.odin
+```
+
 ## Commits
 
 Use [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/). Write an imperative subject of 72 characters or fewer, a blank line, then a body of `-` bullet points that explain what changed and why:
