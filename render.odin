@@ -22,8 +22,16 @@ Renderer :: struct {
 	stack:         [dynamic]Ref,
 	// The indentation of every standalone partial being rendered, outermost first.
 	indents:       [dynamic]string,
-	// The next byte written starts a template line, so indentation must come first.
-	at_line_start: bool,
+	/*
+	The spec indents every line of a standalone partial before rendering it.
+	While pending is true, indents[pending_from:] is still owed to the current
+	line and goes out before the next piece of template output on it. After a
+	newline in template text every indent is owed again. A standalone partial
+	that starts in the middle of a line, after an included partial that didn't
+	end in a newline, owes only its own indent.
+	*/
+	pending:       bool,
+	pending_from:  int,
 	depth:         int,
 }
 
@@ -32,7 +40,7 @@ render_ref_to_writer :: proc(w: io.Writer, tmpl: Template, data: Ref, partials: 
 	r := Renderer {
 		w             = w,
 		partials      = partials,
-		at_line_start = true,
+		pending       = true,
 	}
 	r.stack = make([dynamic]Ref, 0, 16, allocator) or_return
 	defer delete(r.stack)
@@ -65,9 +73,8 @@ render_nodes :: proc(r: ^Renderer, nodes: []Node) -> Error {
 
 @(private)
 render_section :: proc(r: ^Renderer, s: Section) -> Error {
-	if s.standalone_open {
-		r.at_line_start = true
-	} else {
+	// A standalone tag's line is gone from the output, so it owes no indentation.
+	if !s.standalone_open {
 		flush_indent(r) or_return
 	}
 
@@ -90,10 +97,6 @@ render_section :: proc(r: ^Renderer, s: Section) -> Error {
 		render_nodes(r, s.children) or_return
 		pop(&r.stack)
 	}
-
-	if s.standalone_close {
-		r.at_line_start = true
-	}
 	return nil
 }
 
@@ -101,9 +104,6 @@ render_section :: proc(r: ^Renderer, s: Section) -> Error {
 render_partial :: proc(r: ^Renderer, p: Partial) -> Error {
 	if !p.standalone {
 		flush_indent(r) or_return
-	}
-	defer if p.standalone {
-		r.at_line_start = true
 	}
 
 	if r.partials == nil {
@@ -130,14 +130,17 @@ render_partial :: proc(r: ^Renderer, p: Partial) -> Error {
 	}
 
 	if p.standalone {
+		if !r.pending {
+			r.pending, r.pending_from = true, len(r.indents)
+		}
 		append(&r.indents, p.indent) or_return
-		r.at_line_start = true
 	}
 	r.depth += 1
 	err := render_nodes(r, tmpl.nodes)
 	r.depth -= 1
 	if p.standalone {
 		pop(&r.indents)
+		r.pending_from = min(r.pending_from, len(r.indents))
 	}
 	return err
 }
@@ -147,7 +150,8 @@ render_partial :: proc(r: ^Renderer, p: Partial) -> Error {
 write_text :: proc(r: ^Renderer, text: string) -> Error {
 	if len(r.indents) == 0 {
 		write(r, text) or_return
-		r.at_line_start = text[len(text) - 1] == '\n'
+		r.pending = text[len(text) - 1] == '\n'
+		r.pending_from = 0
 		return nil
 	}
 	rest := text
@@ -160,18 +164,18 @@ write_text :: proc(r: ^Renderer, text: string) -> Error {
 		}
 		write(r, rest[:nl + 1]) or_return
 		rest = rest[nl + 1:]
-		r.at_line_start = true
+		r.pending, r.pending_from = true, 0
 	}
 	return nil
 }
 
 @(private)
 flush_indent :: proc(r: ^Renderer) -> Error {
-	if !r.at_line_start {
+	if !r.pending {
 		return nil
 	}
-	r.at_line_start = false
-	for indent in r.indents {
+	r.pending = false
+	for indent in r.indents[r.pending_from:] {
 		write(r, indent) or_return
 	}
 	return nil

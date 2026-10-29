@@ -675,6 +675,30 @@ test_partials_indentation_skips_interpolated_newlines :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_partials_indentation_after_partial_without_trailing_newline :: proc(t: ^testing.T) {
+	context.allocator = track_leaks(t).allocator
+	partials: mustache.Partials
+	mustache.partials_init(&partials)
+	defer mustache.partials_destroy(&partials)
+	// The spec indents every line of a partial before rendering it. A partial
+	// that doesn't end in a newline leaves the next text on the same line, so
+	// that text must not get a second copy of the indentation.
+	testing.expect_value(t, mustache.partials_add(&partials, "x", "x"), nil)
+	testing.expect_value(t, mustache.partials_add(&partials, "yz", "y\nz\n"), nil)
+	testing.expect_value(t, mustache.partials_add(&partials, "text_after", "{{>x}}\ny\n"), nil)
+	testing.expect_value(t, mustache.partials_add(&partials, "partial_after", "{{>x}}\n{{>yz}}\n"), nil)
+	testing.expect_value(t, mustache.partials_add(&partials, "indented_after", "{{>x}}\n  {{>yz}}\n"), nil)
+	testing.expect_value(t, mustache.partials_add(&partials, "section_after", "{{#t}}\n{{>x}}\n{{/t}}\nq\n"), nil)
+	data := mustache.Object{{"t", true}}
+	expect_render(t, "  {{>text_after}}\n", data, "  xy\n", &partials)
+	expect_render(t, "  {{>partial_after}}\n", data, "  xy\n  z\n", &partials)
+	expect_render(t, "  {{>indented_after}}\n", data, "  x  y\n    z\n", &partials)
+	expect_render(t, "  {{>section_after}}\n", data, "  xq\n", &partials)
+	// At the top level nothing changes: there is no outer indentation to repeat.
+	expect_render(t, "{{>x}}\n{{>yz}}\n", data, "xy\nz\n", &partials)
+}
+
+@(test)
 test_partials_dynamic_name_must_be_a_string :: proc(t: ^testing.T) {
 	context.allocator = track_leaks(t).allocator
 	partials: mustache.Partials
