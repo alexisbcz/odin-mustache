@@ -655,6 +655,19 @@ test_partials_add_template_takes_ownership :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_partials_zero_value_is_ready_to_use :: proc(t: ^testing.T) {
+	context.allocator = track_leaks(t).allocator
+	// No partials_init: the zero value must adopt context.allocator, as Odin maps do.
+	partials: mustache.Partials
+	defer mustache.partials_destroy(&partials)
+	testing.expect_value(t, mustache.partials_add(&partials, "greet", "hello {{x}}"), nil)
+	tmpl, err := mustache.compile("[{{x}}]")
+	testing.expect_value(t, err, nil)
+	testing.expect_value(t, mustache.partials_add_template(&partials, "wrap", tmpl), nil)
+	expect_render(t, "{{>greet}} {{>wrap}}", mustache.Object{{"x", "y"}}, "hello y [y]", &partials)
+}
+
+@(test)
 test_partials_runaway_recursion_is_an_error :: proc(t: ^testing.T) {
 	context.allocator = track_leaks(t).allocator
 	partials: mustache.Partials

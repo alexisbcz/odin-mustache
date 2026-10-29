@@ -7,7 +7,9 @@ import "core:strings"
 Partials is a named set of compiled templates that `{{> name}}` tags include.
 
 Create one with partials_init, fill it with partials_add or
-partials_add_template, and release it with partials_destroy. A name with no
+partials_add_template, and release it with partials_destroy. A zero Partials
+is also ready to use: like an Odin map, it adopts `context.allocator` the first
+time something is added to it. A name with no
 partial renders as empty text, as the Mustache specification requires.
 Rendering only reads a Partials value, so several threads may share one while
 nothing adds to it.
@@ -48,6 +50,7 @@ Returns:
   Use compile_with_location and partials_add_template when you need the position of a parse error.
 */
 partials_add :: proc(p: ^Partials, name, source: string) -> (err: Error) {
+	adopt_context_allocator(p)
 	tmpl := compile(source, p.allocator) or_return
 	return partials_add_template(p, name, tmpl)
 }
@@ -63,6 +66,7 @@ Returns:
 - err: an allocator error. On error, `tmpl` is destroyed and `p` is unchanged.
 */
 partials_add_template :: proc(p: ^Partials, name: string, tmpl: Template) -> (err: Error) {
+	adopt_context_allocator(p)
 	tmpl := tmpl
 	if existing, found := &p.templates[name]; found {
 		template_destroy(existing)
@@ -81,4 +85,13 @@ partials_add_template :: proc(p: ^Partials, name: string, tmpl: Template) -> (er
 	}
 	p.templates[key] = tmpl
 	return nil
+}
+
+// adopt_context_allocator gives a zero Partials the context allocator, so that it never copies names with a nil allocator.
+@(private)
+adopt_context_allocator :: proc(p: ^Partials) {
+	if p.allocator.procedure == nil {
+		p.allocator = context.allocator
+		p.templates.allocator = context.allocator
+	}
 }
