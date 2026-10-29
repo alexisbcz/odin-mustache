@@ -266,6 +266,10 @@ parse :: proc(p: ^Parser) -> (nodes: []Node, error_offset: int, err: Error) {
 		case .Delimiters:
 			close_idx = index_before(src, content_start, '=', p.ctag)
 			tag_end = close_idx + 1 + len(p.ctag)
+			if close_idx < 0 && strings.contains(src[after_open:], p.ctag) {
+				// A closing delimiter follows, but without the "=" before it.
+				return nil, tag_start, .Invalid_Delimiters
+			}
 		case .Variable, .Unescaped, .Section, .Inverted, .Close, .Comment, .Partial, .Unsupported:
 			if i := strings.index(src[content_start:], p.ctag); i >= 0 {
 				close_idx = content_start + i

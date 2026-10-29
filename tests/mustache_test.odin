@@ -189,6 +189,10 @@ test_compile_rejects_bad_delimiters :: proc(t: ^testing.T) {
 	expect_compile_error(t, "{{= =}}", .Invalid_Delimiters)
 	expect_compile_error(t, "{{=<% %> x=}}", .Invalid_Delimiters)
 	expect_compile_error(t, "{{=a= b=}}", .Invalid_Delimiters)
+	// The tag is closed but lacks the "=" before the closing delimiter.
+	expect_compile_error(t, "{{=}}", .Invalid_Delimiters)
+	expect_compile_error(t, "{{=<% %>}} text", .Invalid_Delimiters)
+	expect_compile_error(t, "{{=<% %>", .Unclosed_Tag)
 }
 
 // nested_sections returns `depth` nested `{{#a}}` sections around "x".

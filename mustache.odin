@@ -51,7 +51,7 @@ Parse_Error :: enum {
 	Empty_Tag,
 	// A tag name contains whitespace or an empty dotted segment, as in `{{a..b}}`.
 	Invalid_Name,
-	// A set delimiter tag is not of the form `{{=open close=}}`.
+	// A set delimiter tag is not of the form `{{=open close=}}`, as in `{{=<% %>}}`.
 	Invalid_Delimiters,
 	// A section or inverted section is still open at the end of the template.
 	Unclosed_Section,
